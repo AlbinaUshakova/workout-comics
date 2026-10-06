@@ -1,5 +1,19 @@
-const CACHE = "posture-comic-v1";
-const ASSETS = ["/", "/posture-workout.png", "/app-icon.png", "/manifest.webmanifest"];
+const CACHE = "workout-comics-v2";
+const ASSETS = [
+  "/",
+  "/posture-workout.png",
+  "/workout-mobility.png",
+  "/workout-hips.png",
+  "/workout-abs.png",
+  "/workout-core.png",
+  "/workout-feet.png",
+  "/workout-legs.png",
+  "/workout-shoulders.png",
+  "/workout-balance.png",
+  "/workout-arms.png",
+  "/app-icon.png",
+  "/manifest.webmanifest"
+];
 
 self.addEventListener("install", (event) => {
   event.waitUntil(caches.open(CACHE).then((cache) => cache.addAll(ASSETS)));

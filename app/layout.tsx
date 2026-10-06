@@ -2,14 +2,14 @@ import type { Metadata, Viewport } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "Тренировка для осанки",
-  description: "Ежедневная тренировка для осанки в формате комикса",
+  title: "Моя книга тренировок",
+  description: "Десять ежедневных тренировок в формате комиксов",
   applicationName: "Моя тренировка",
   manifest: "/manifest.webmanifest",
   appleWebApp: {
     capable: true,
     statusBarStyle: "black-translucent",
-    title: "Осанка",
+    title: "Тренировки",
   },
   icons: {
     icon: "/app-icon.png",
