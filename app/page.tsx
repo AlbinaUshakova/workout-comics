@@ -10,6 +10,8 @@ type Workout = {
   accent: string;
 };
 
+type DragState = { id: string; x: number; y: number };
+
 const WORKOUTS: Workout[] = [
   { id: "posture", title: "Тренировка для осанки", shortTitle: "Осанка", image: "/posture-workout.png", accent: "#ff4f9a" },
   { id: "mobility", title: "Мобильность всего тела", shortTitle: "Мобильность", image: "/workout-mobility.png", accent: "#ffbb36" },
@@ -28,8 +30,9 @@ const STORAGE_KEY = "workout-comic-order-v2";
 export default function Home() {
   const [order, setOrder] = useState(() => WORKOUTS.map((workout) => workout.id));
   const [currentId, setCurrentId] = useState(WORKOUTS[0].id);
-  const [libraryOpen, setLibraryOpen] = useState(false);
+  const [view, setView] = useState<"library" | "reader">("library");
   const [editingOrder, setEditingOrder] = useState(false);
+  const [drag, setDrag] = useState<DragState | null>(null);
   const [scale, setScale] = useState(1);
   const [turnDirection, setTurnDirection] = useState<"next" | "previous">("next");
   const pointerStart = useRef<{ x: number; y: number } | null>(null);
@@ -40,22 +43,19 @@ export default function Home() {
     .filter((workout): workout is Workout => Boolean(workout));
   const currentIndex = Math.max(0, orderedWorkouts.findIndex((workout) => workout.id === currentId));
   const current = orderedWorkouts[currentIndex] ?? WORKOUTS[0];
+  const draggedWorkout = drag ? WORKOUTS.find((workout) => workout.id === drag.id) : null;
 
   useEffect(() => {
     const saved = window.localStorage.getItem(STORAGE_KEY);
     if (saved) {
       try {
         const parsed = JSON.parse(saved) as string[];
-        if (parsed.length === WORKOUTS.length && WORKOUTS.every((workout) => parsed.includes(workout.id))) {
-          setOrder(parsed);
-        }
+        if (parsed.length === WORKOUTS.length && WORKOUTS.every((workout) => parsed.includes(workout.id))) setOrder(parsed);
       } catch {
         window.localStorage.removeItem(STORAGE_KEY);
       }
     }
-    if ("serviceWorker" in navigator) {
-      navigator.serviceWorker.register("/sw.js").catch(() => undefined);
-    }
+    if ("serviceWorker" in navigator) navigator.serviceWorker.register("/sw.js").catch(() => undefined);
   }, []);
 
   useEffect(() => {
@@ -76,18 +76,35 @@ export default function Home() {
   const chooseWorkout = (id: string) => {
     const nextIndex = orderedWorkouts.findIndex((workout) => workout.id === id);
     turnTo(nextIndex, nextIndex >= currentIndex ? "next" : "previous");
-    setLibraryOpen(false);
+    setView("reader");
   };
 
-  const moveWorkout = (id: string, offset: number) => {
+  const startDrag = (event: React.PointerEvent<HTMLButtonElement>, id: string) => {
+    event.currentTarget.setPointerCapture(event.pointerId);
+    setDrag({ id, x: event.clientX, y: event.clientY });
+  };
+
+  const updateDrag = (event: React.PointerEvent<HTMLButtonElement>) => {
+    if (!drag) return;
+    setDrag({ ...drag, x: event.clientX, y: event.clientY });
+    const target = document.elementFromPoint(event.clientX, event.clientY)?.closest("[data-workout-id]") as HTMLElement | null;
+    const targetId = target?.dataset.workoutId;
+    if (!targetId || targetId === drag.id) return;
+
     setOrder((currentOrder) => {
-      const from = currentOrder.indexOf(id);
-      const to = from + offset;
-      if (to < 0 || to >= currentOrder.length) return currentOrder;
+      const from = currentOrder.indexOf(drag.id);
+      const to = currentOrder.indexOf(targetId);
+      if (from < 0 || to < 0 || from === to) return currentOrder;
       const nextOrder = [...currentOrder];
-      [nextOrder[from], nextOrder[to]] = [nextOrder[to], nextOrder[from]];
+      nextOrder.splice(from, 1);
+      nextOrder.splice(to, 0, drag.id);
       return nextOrder;
     });
+  };
+
+  const endDrag = (event: React.PointerEvent<HTMLButtonElement>) => {
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId);
+    setDrag(null);
   };
 
   const resetOrder = () => setOrder(WORKOUTS.map((workout) => workout.id));
@@ -97,9 +114,7 @@ export default function Home() {
     const deltaX = event.clientX - pointerStart.current.x;
     const deltaY = event.clientY - pointerStart.current.y;
     pointerStart.current = null;
-    if (Math.abs(deltaX) > 52 && Math.abs(deltaX) > Math.abs(deltaY) * 1.25) {
-      deltaX < 0 ? next() : previous();
-    }
+    if (Math.abs(deltaX) > 52 && Math.abs(deltaX) > Math.abs(deltaY) * 1.25) deltaX < 0 ? next() : previous();
   };
 
   const handleDoubleTap = () => {
@@ -108,23 +123,85 @@ export default function Home() {
     lastTap.current = now;
   };
 
+  if (view === "library") {
+    return (
+      <main className="library-home">
+        <header className="library-header">
+          <div>
+            <p>12–15 минут в день</p>
+            <h1>Моя книга тренировок</h1>
+            <span>{editingOrder ? "Зажмите ручку и перемещайте тренировку" : "Выберите, что хотите сделать сегодня"}</span>
+          </div>
+          <button type="button" onClick={() => { setEditingOrder((value) => !value); setDrag(null); }}>
+            {editingOrder ? "Готово" : "Изменить порядок"}
+          </button>
+        </header>
+
+        {editingOrder ? (
+          <section className="reorder-page" aria-label="Изменить порядок тренировок">
+            <div className="drag-tip"><span aria-hidden="true">≡</span> Тяните карточку за ручку справа</div>
+            <div className="reorder-list">
+              {orderedWorkouts.map((workout, index) => (
+                <article
+                  className={`reorder-item ${drag?.id === workout.id ? "is-dragging" : ""}`}
+                  key={workout.id}
+                  data-workout-id={workout.id}
+                >
+                  <span className="order-number" style={{ background: workout.accent }}>{index + 1}</span>
+                  <img src={workout.image} alt="" />
+                  <strong>{workout.shortTitle}</strong>
+                  <button
+                    className="drag-handle"
+                    type="button"
+                    aria-label={`Перетащить: ${workout.shortTitle}`}
+                    onPointerDown={(event) => startDrag(event, workout.id)}
+                    onPointerMove={updateDrag}
+                    onPointerUp={endDrag}
+                    onPointerCancel={endDrag}
+                  >
+                    <span aria-hidden="true">≡</span>
+                  </button>
+                </article>
+              ))}
+            </div>
+            <button className="reset-order" type="button" onClick={resetOrder}>Вернуть исходный порядок</button>
+          </section>
+        ) : (
+          <section className="library-grid" aria-label="Все тренировки">
+            {orderedWorkouts.map((workout, index) => (
+              <button type="button" key={workout.id} onClick={() => chooseWorkout(workout.id)}>
+                <span className="thumbnail-wrap">
+                  <img src={workout.image} alt="" />
+                  <i style={{ background: workout.accent }}>{index + 1}</i>
+                </span>
+                <span className="card-copy">
+                  <strong>{workout.shortTitle}</strong>
+                  <small>7 упражнений</small>
+                </span>
+              </button>
+            ))}
+          </section>
+        )}
+
+        {drag && draggedWorkout && (
+          <div className="drag-ghost" style={{ left: drag.x, top: drag.y }} aria-hidden="true">
+            <img src={draggedWorkout.image} alt="" />
+            <strong>{draggedWorkout.shortTitle}</strong>
+            <span>≡</span>
+          </div>
+        )}
+      </main>
+    );
+  }
+
   return (
     <main className="app-shell">
       <header className="reader-header">
-        <button className="library-button" type="button" onClick={() => setLibraryOpen(true)} aria-label="Выбрать тренировку">
-          <span aria-hidden="true">▦</span>
-          <span>Все</span>
+        <button className="library-button" type="button" onClick={() => setView("library")} aria-label="Все тренировки">
+          <span aria-hidden="true">▦</span><span>Все</span>
         </button>
-        <div className="title-block">
-          <p>12–15 минут</p>
-          <h1>{current.shortTitle}</h1>
-        </div>
-        <button
-          className="zoom-button"
-          type="button"
-          onClick={() => setScale((value) => value === 1 ? 2 : 1)}
-          aria-label={scale === 1 ? "Увеличить комикс" : "Уменьшить комикс"}
-        >
+        <div className="title-block"><p>12–15 минут</p><h1>{current.shortTitle}</h1></div>
+        <button className="zoom-button" type="button" onClick={() => setScale((value) => value === 1 ? 2 : 1)} aria-label={scale === 1 ? "Увеличить комикс" : "Уменьшить комикс"}>
           {scale === 1 ? "+" : "−"}
         </button>
       </header>
@@ -142,69 +219,21 @@ export default function Home() {
             src={current.image}
             alt={`${current.title}: комикс с семью упражнениями`}
             draggable={false}
-            style={{
-              width: scale === 1 ? "100%" : `${scale * 100}%`,
-              maxHeight: scale === 1 ? "calc(100dvh - 146px)" : "none",
-            }}
+            style={{ width: scale === 1 ? "100%" : `${scale * 100}%`, maxHeight: scale === 1 ? "calc(100dvh - 146px)" : "none" }}
           />
         </div>
       </section>
 
       <footer className="reader-footer">
         <button className="turn-button" type="button" onClick={previous} aria-label="Предыдущая тренировка">‹</button>
-        <button className="page-status" type="button" onClick={() => setLibraryOpen(true)}>
+        <button className="page-status" type="button" onClick={() => setView("library")}>
           <span className="page-dots" aria-hidden="true">
-            {orderedWorkouts.map((workout, index) => (
-              <i key={workout.id} className={index === currentIndex ? "active" : ""} />
-            ))}
+            {orderedWorkouts.map((workout, index) => <i key={workout.id} className={index === currentIndex ? "active" : ""} />)}
           </span>
           <span>{currentIndex + 1} из {orderedWorkouts.length}</span>
         </button>
         <button className="turn-button" type="button" onClick={next} aria-label="Следующая тренировка">›</button>
       </footer>
-
-      <div className={`library-backdrop ${libraryOpen ? "is-open" : ""}`} onClick={() => setLibraryOpen(false)} />
-      <section className={`library-sheet ${libraryOpen ? "is-open" : ""}`} aria-hidden={!libraryOpen} aria-label="Все тренировки">
-        <div className="sheet-handle" />
-        <div className="sheet-heading">
-          <div>
-            <p>Моя книга</p>
-            <h2>{editingOrder ? "Изменить порядок" : "Выбрать тренировку"}</h2>
-          </div>
-          <button type="button" onClick={() => setEditingOrder((value) => !value)}>
-            {editingOrder ? "Готово" : "Порядок"}
-          </button>
-        </div>
-
-        {editingOrder ? (
-          <div className="reorder-list">
-            {orderedWorkouts.map((workout, index) => (
-              <article className="reorder-item" key={workout.id}>
-                <span className="order-number" style={{ background: workout.accent }}>{index + 1}</span>
-                <img src={workout.image} alt="" />
-                <strong>{workout.shortTitle}</strong>
-                <div className="reorder-actions">
-                  <button type="button" onClick={() => moveWorkout(workout.id, -1)} disabled={index === 0} aria-label={`${workout.shortTitle}: выше`}>↑</button>
-                  <button type="button" onClick={() => moveWorkout(workout.id, 1)} disabled={index === orderedWorkouts.length - 1} aria-label={`${workout.shortTitle}: ниже`}>↓</button>
-                </div>
-              </article>
-            ))}
-            <button className="reset-order" type="button" onClick={resetOrder}>Вернуть исходный порядок</button>
-          </div>
-        ) : (
-          <div className="library-grid">
-            {orderedWorkouts.map((workout, index) => (
-              <button className={workout.id === current.id ? "selected" : ""} type="button" key={workout.id} onClick={() => chooseWorkout(workout.id)}>
-                <span className="thumbnail-wrap">
-                  <img src={workout.image} alt="" />
-                  <i style={{ background: workout.accent }}>{index + 1}</i>
-                </span>
-                <strong>{workout.shortTitle}</strong>
-              </button>
-            ))}
-          </div>
-        )}
-      </section>
     </main>
   );
 }

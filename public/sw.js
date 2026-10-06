@@ -1,4 +1,4 @@
-const CACHE = "workout-comics-v2";
+const CACHE = "workout-comics-v3";
 const ASSETS = [
   "/",
   "/posture-workout.png",
