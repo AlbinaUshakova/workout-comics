@@ -1,4 +1,6 @@
-# vinext-starter
+# Workout Comics
+
+Mobile-first workout comic reader with a reorderable workout library.
 
 A clean full-stack starter running on
 [vinext](https://github.com/cloudflare/vinext), with optional Cloudflare D1 and
@@ -91,6 +93,7 @@ actions tied to the current ChatGPT user. Leave public content anonymous.
 
 - `npm run dev`: start local development
 - `npm run build`: verify the vinext build output
+- `npm run build:vercel`: create the static Vercel build in `vercel-dist`
 - `npm test`: build the starter and verify its rendered loading skeleton
 - `npm run db:generate`: generate Drizzle migrations after schema changes
 
